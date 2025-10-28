@@ -2,30 +2,34 @@ import express from "express";
 import fetch from "node-fetch";
 
 const app = express();
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "20mb" }));
 
+// 🔑 Variável de ambiente do Render
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// ✅ Função auxiliar: baixar imagem e converter em base64
+async function baixarImagemComoBase64(url) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Erro ao baixar imagem: ${resp.status}`);
+  const buffer = await resp.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString("base64");
+  const contentType = resp.headers.get("content-type") || "image/jpeg";
+  return { base64, contentType };
+}
+
+// ✅ Endpoint principal OCR
 app.post("/ocr", async (req, res) => {
   try {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ sucesso: false, erro: "URL ausente no corpo da requisição" });
+    if (!url) return res.status(400).json({ sucesso: false, erro: "URL ausente" });
 
-    const proxyUrl = "https://eot93e48srsoatj.m.pipedream.net";
-    const proxyResp = await fetch(proxyUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url }),
-    });
+    // 1️⃣ Baixa a imagem
+    const { base64, contentType } = await baixarImagemComoBase64(url);
 
-    if (!proxyResp.ok) throw new Error(`Falha no proxy: HTTP ${proxyResp.status}`);
-    const proxyJson = await proxyResp.json();
-    const base64 = proxyJson?.base64 || proxyJson?.resultado?.base64;
-    const contentType = proxyJson?.mime || proxyJson?.resultado?.mime || "image/png";
+    // 2️⃣ Monta requisição ao Gemini
+    const geminiURL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`;
 
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (!geminiKey) throw new Error("Chave GEMINI_API_KEY não configurada.");
-
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiKey}`;
-    const geminiBody = {
+    const bodyGemini = {
       contents: [
         {
           role: "user",
@@ -37,24 +41,29 @@ app.post("/ocr", async (req, res) => {
       ],
     };
 
-    const geminiResp = await fetch(geminiUrl, {
+    // 3️⃣ Envia pro Gemini
+    const respGemini = await fetch(geminiURL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(geminiBody),
+      body: JSON.stringify(bodyGemini),
     });
 
-    const txt = await geminiResp.text();
-    if (!geminiResp.ok) throw new Error(`Erro Gemini API (${geminiResp.status}): ${txt}`);
+    const txt = await respGemini.text();
+    if (!respGemini.ok) throw new Error(`Gemini falhou: ${txt}`);
 
-    const geminiJson = JSON.parse(txt);
-    const textoExtraido = geminiJson?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+    const json = JSON.parse(txt);
+    const textoExtraido = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
 
-    res.json({ sucesso: true, modelo: "gemini-2.0-flash-exp", textoExtraido });
+    return res.json({
+      sucesso: true,
+      modelo: "gemini-2.0-flash-exp",
+      textoExtraido,
+    });
   } catch (erro) {
-    console.error("🚨 Erro:", erro);
-    res.status(500).json({ sucesso: false, erro: erro.message });
+    console.error("❌ Erro OCR:", erro);
+    return res.status(500).json({ sucesso: false, erro: String(erro.message || erro) });
   }
 });
 
-app.get("/", (_, res) => res.send("✅ OCR Gemini Proxy ativo"));
-app.listen(process.env.PORT || 3000, () => console.log("Servidor OCR ativo"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Servidor OCR ativo na porta ${PORT}`));
