@@ -1,71 +1,34 @@
 import express from "express";
 import fetch from "node-fetch";
+import { createWorker } from "tesseract.js";
 
 const app = express();
 app.use(express.json({ limit: "20mb" }));
 
-// 🔑 Variável de ambiente do Render
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-
-// ✅ Função auxiliar: baixar imagem e converter em base64
-async function baixarImagemComoBase64(url) {
+async function baixarImagemBuffer(url) {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Erro ao baixar imagem: ${resp.status}`);
   const buffer = await resp.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString("base64");
-  const contentType = resp.headers.get("content-type") || "image/jpeg";
-  return { base64, contentType };
+  return Buffer.from(buffer);
 }
 
-// ✅ Endpoint principal OCR
 app.post("/ocr", async (req, res) => {
   try {
     const { url } = req.body;
     if (!url) return res.status(400).json({ sucesso: false, erro: "URL ausente" });
 
-    // 1️⃣ Baixa a imagem
-    const { base64, contentType } = await baixarImagemComoBase64(url);
+    const imageBuffer = await baixarImagemBuffer(url);
 
-    // 2️⃣ Monta requisição ao Gemini
-    const geminiURL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const worker = await createWorker("por"); // idioma português
+    const { data } = await worker.recognize(imageBuffer);
+    await worker.terminate();
 
-
-
-    const bodyGemini = {
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: "Extraia todo o texto visível desta imagem e retorne apenas o texto puro." },
-            { inline_data: { mime_type: contentType, data: base64 } },
-          ],
-        },
-      ],
-    };
-
-    // 3️⃣ Envia pro Gemini
-    const respGemini = await fetch(geminiURL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(bodyGemini),
-    });
-
-    const txt = await respGemini.text();
-    if (!respGemini.ok) throw new Error(`Gemini falhou: ${txt}`);
-
-    const json = JSON.parse(txt);
-    const textoExtraido = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-
-    return res.json({
-      sucesso: true,
-      modelo: "gemini-2.0-flash-exp",
-      textoExtraido,
-    });
+    return res.json({ sucesso: true, textoExtraido: data.text.trim() });
   } catch (erro) {
-    console.error("❌ Erro OCR:", erro);
+    console.error("❌ Erro OCR-Tesseract:", erro);
     return res.status(500).json({ sucesso: false, erro: String(erro.message || erro) });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Servidor OCR ativo na porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Servidor OCR (Tesseract) ativo na porta ${PORT}`));
