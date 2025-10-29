@@ -13,12 +13,10 @@ app.use(morgan("dev"));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 🧠 Função para processar OCR
+// 🧠 Função OCR
 async function extractTextFromBuffer(buffer) {
   try {
-    const result = await Tesseract.recognize(buffer, "por+eng", {
-      logger: (m) => console.log(m),
-    });
+    const result = await Tesseract.recognize(buffer, "por+eng");
     return result.data.text;
   } catch (err) {
     console.error("Erro no OCR:", err);
@@ -26,26 +24,23 @@ async function extractTextFromBuffer(buffer) {
   }
 }
 
-// 🧩 Rota principal de teste
+// 🔹 Rota raiz
 app.get("/", (req, res) => {
-  res.json({ status: "✅ Servidor OCR ativo", time: new Date().toISOString() });
+  res.json({ status: "✅ Servidor OCR ativo", hora: new Date().toISOString() });
 });
 
-// 🧩 Rota para processar OCR (imagem ou URL)
+// 🔹 Rota OCR
 app.post("/ocr", upload.single("image"), async (req, res) => {
   try {
     let imgBuffer = null;
 
     if (req.file) {
-      // Envio multipart/form-data
       imgBuffer = req.file.buffer;
     } else if (req.body.url) {
-      // Envio via JSON: { "url": "https://..." }
       const response = await fetch(req.body.url);
-      imgBuffer = await response.arrayBuffer();
-      imgBuffer = Buffer.from(imgBuffer);
+      imgBuffer = Buffer.from(await response.arrayBuffer());
     } else {
-      return res.status(400).json({ error: "Envie uma imagem ou uma URL." });
+      return res.status(400).json({ error: "Envie uma imagem ou URL." });
     }
 
     const fileType = await fromBuffer(imgBuffer);
@@ -54,14 +49,12 @@ app.post("/ocr", upload.single("image"), async (req, res) => {
     }
 
     const text = await extractTextFromBuffer(imgBuffer);
-    res.json({ text, length: text.length, processedAt: new Date().toISOString() });
+    res.json({ texto: text, tamanho: text.length });
   } catch (err) {
-    console.error("Erro no processamento:", err);
-    res.status(500).json({ error: "Erro interno ao processar OCR." });
+    console.error("Erro OCR:", err);
+    res.status(500).json({ error: "Falha no OCR." });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor OCR (Tesseract) ativo na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Servidor OCR ativo na porta ${PORT}`));
