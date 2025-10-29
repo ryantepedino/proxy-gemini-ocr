@@ -13,23 +13,18 @@ app.use(morgan("dev"));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 🧠 Função OCR
-async function extractTextFromBuffer(buffer) {
-  try {
-    const result = await Tesseract.recognize(buffer, "por+eng");
-    return result.data.text;
-  } catch (err) {
-    console.error("Erro no OCR:", err);
-    throw err;
-  }
-}
-
-// 🔹 Rota raiz
+// ✅ Teste de status
 app.get("/", (req, res) => {
   res.json({ status: "✅ Servidor OCR ativo", hora: new Date().toISOString() });
 });
 
-// 🔹 Rota OCR
+// ✅ Função OCR
+async function extractTextFromBuffer(buffer) {
+  const result = await Tesseract.recognize(buffer, "por+eng");
+  return result.data.text;
+}
+
+// ✅ Endpoint OCR
 app.post("/ocr", upload.single("image"), async (req, res) => {
   try {
     let imgBuffer = null;
@@ -44,15 +39,15 @@ app.post("/ocr", upload.single("image"), async (req, res) => {
     }
 
     const fileType = await fromBuffer(imgBuffer);
-    if (!fileType || !fileType.mime.startsWith("image/")) {
+    if (!fileType?.mime?.startsWith("image/")) {
       return res.status(400).json({ error: "Arquivo inválido." });
     }
 
     const text = await extractTextFromBuffer(imgBuffer);
     res.json({ texto: text, tamanho: text.length });
-  } catch (err) {
-    console.error("Erro OCR:", err);
-    res.status(500).json({ error: "Falha no OCR." });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erro interno no OCR." });
   }
 });
 
