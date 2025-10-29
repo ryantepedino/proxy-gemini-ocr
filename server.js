@@ -1,10 +1,10 @@
-import express from "express";
-import cors from "cors";
-import morgan from "morgan";
-import multer from "multer";
-import fetch from "node-fetch";
-import { fromBuffer } from "file-type";
-import Tesseract from "tesseract.js";
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+const multer = require("multer");
+const fetch = require("node-fetch");
+const { fromBuffer } = require("file-type");
+const Tesseract = require("tesseract.js");
 
 const app = express();
 app.use(cors());
@@ -13,18 +13,15 @@ app.use(morgan("dev"));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ✅ Teste de status
 app.get("/", (req, res) => {
   res.json({ status: "✅ Servidor OCR ativo", hora: new Date().toISOString() });
 });
 
-// ✅ Função OCR
 async function extractTextFromBuffer(buffer) {
   const result = await Tesseract.recognize(buffer, "por+eng");
   return result.data.text;
 }
 
-// ✅ Endpoint OCR
 app.post("/ocr", upload.single("image"), async (req, res) => {
   try {
     let imgBuffer = null;
@@ -33,7 +30,7 @@ app.post("/ocr", upload.single("image"), async (req, res) => {
       imgBuffer = req.file.buffer;
     } else if (req.body.url) {
       const response = await fetch(req.body.url);
-      imgBuffer = Buffer.from(await response.arrayBuffer());
+      imgBuffer = await response.buffer();
     } else {
       return res.status(400).json({ error: "Envie uma imagem ou URL." });
     }
