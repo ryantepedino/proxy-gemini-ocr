@@ -1,52 +1,60 @@
-const express = require("express");
-const cors = require("cors");
-const morgan = require("morgan");
-const multer = require("multer");
-const fetch = require("node-fetch");
-const { fromBuffer } = require("file-type");
-const Tesseract = require("tesseract.js");
+// server.js
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+import Tesseract from "tesseract.js";
+import morgan from "morgan";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
+const PORT = process.env.PORT || 10000;
+
 app.use(cors());
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json());
 app.use(morgan("dev"));
 
-const upload = multer({ storage: multer.memoryStorage() });
-
+// rota de status
 app.get("/", (req, res) => {
   res.json({ status: "✅ Servidor OCR ativo", hora: new Date().toISOString() });
 });
 
-async function extractTextFromBuffer(buffer) {
-  const result = await Tesseract.recognize(buffer, "por+eng");
-  return result.data.text;
-}
-
-app.post("/ocr", upload.single("image"), async (req, res) => {
+// OCR principal
+app.post("/ocr", async (req, res) => {
   try {
-    let imgBuffer = null;
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: "URL da imagem ausente." });
 
-    if (req.file) {
-      imgBuffer = req.file.buffer;
-    } else if (req.body.url) {
-      const response = await fetch(req.body.url);
-      imgBuffer = await response.buffer();
-    } else {
-      return res.status(400).json({ error: "Envie uma imagem ou URL." });
-    }
+    // baixa a imagem
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    const fileType = await fromBuffer(imgBuffer);
-    if (!fileType?.mime?.startsWith("image/")) {
-      return res.status(400).json({ error: "Arquivo inválido." });
-    }
+    // salva temporariamente
+    const tempPath = path.join(__dirname, "temp_image.jpg");
+    fs.writeFileSync(tempPath, buffer);
 
-    const text = await extractTextFromBuffer(imgBuffer);
-    res.json({ texto: text, tamanho: text.length });
+    // executa OCR
+    const result = await Tesseract.recognize(tempPath, "por", {
+      logger: (m) => console.log(m),
+    });
+
+    // remove o arquivo temporário
+    fs.unlinkSync(tempPath);
+
+    res.json({
+      sucesso: true,
+      textoExtraido: result.data.text.trim(),
+    });
   } catch (error) {
-    console.error(error);
+    console.error("❌ Erro no OCR:", error);
     res.status(500).json({ error: "Erro interno no OCR." });
   }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`🚀 Servidor OCR ativo na porta ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
